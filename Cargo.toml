@@ -62,3 +62,8 @@ required-features = ["render"]
 name = "e01_rtt_camera_cost"
 path = "src/bin/e01_rtt_camera_cost.rs"
 required-features = ["render"]
+
+[[bin]]
+name = "e31_cross_app_texture"
+path = "src/bin/e31_cross_app_texture.rs"
+required-features = ["render"]

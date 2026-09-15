@@ -471,15 +471,122 @@ one paragraph.
 Directly relevant to Bevy's own editor effort, and it is the README section
 explaining why cards are one at a time rather than an apology for it.
 
-### What is still worth running
+### Does this still matter, now that Gate 2 passes?
 
-- **E12's entity-id collision is already confirmed** by E40 at 100% overlap, so
-  it needs no separate experiment. See Finding 4.
-- **E13 (dormancy)** is still worth running and is independent of rendering: it
-  is about change ticks, `Time`, and events in a world that has not been ticked
-  for a long time. Phase 4 already establishes the `Time` half.
-- **E11** is only meaningful once something gets two worlds in front of the
-  render world, so it moves behind Phase 3's E30/E31.
+Less than it looked at the time, and it is worth being clear about that rather
+than leaving a dramatic negative result standing unqualified.
+
+The world swap was one route to isolated card worlds. Phase 3 reaches the same
+place by a different one, and because the multi-App design never swaps a main
+world, the `WorldId` binding that killed Phase 1 cannot arise there. Phase 1 is
+a dead end, not a blocked road.
+
+What survives is the upstream report below. It is still the only precise account
+of why one render world cannot serve two main worlds, it is still relevant to
+Bevy's editor work, and it is still worth filing.
+
+---
+
+# Phase 3 — Shared device, multiple Apps
+
+The plan treats this as the fallback if Phase 1 fails its gate. It is not a
+fallback; it is the design. **Gate 2 passes, using nothing but public API.**
+
+## E30 — does a second App boot on a borrowed device?
+
+**Verdict: yes.** Answered in passing by E10 stage 3b, before Phase 3 was
+started. `RenderCreation::manual(device, queue, adapter_info, adapter, instance)`
+boots additional Apps in-process with no second GPU context. All five handles are
+publicly nameable.
+
+One wrinkle: `RenderInstance` is inserted **only into the render world**, while
+`RenderDevice`, `RenderQueue`, `RenderAdapter` and `RenderAdapterInfo` go into
+both. Borrowing the full set means reaching into `RenderApp` as well as the main
+world.
+
+## E31 — cross-App texture handoff
+
+**Verdict: PASS.** Three separate Apps each rendered into a texture the host
+owns, in one process, on one device, with no crosstalk.
+
+`cargo run --release --features render --bin e31_cross_app_texture`
+
+### The handoff goes the other way round
+
+The plan asks: "Can the host's render world be handed a `GpuImage` pointing at
+the card's texture?" The answer is to not do that. Reverse it:
+
+1. the **host** creates an ordinary `Image` and lets its own render world build
+   the `GpuImage`,
+2. that `GpuImage`'s `TextureView` is handed to the card App's
+   `ManualTextureViews`,
+3. the card's camera targets `RenderTarget::TextureView(handle)`.
+
+The host then samples its own `Image` like any other texture. `RenderAssets`
+being per-app stops being a problem, because nothing is ever injected into the
+host's asset storage — no fighting the host's render-asset pipeline for ownership
+of an `AssetId`, and no lifetime question about a texture owned by another App.
+
+`RenderTarget::TextureView` is documented as the hook for views "created outside
+of Bevy, for example OpenXR", so this is a supported path rather than a crack
+being squeezed through.
+
+### Result
+
+Each card clears to a distinct pure colour, and the host reads its own textures
+back through `Readback`. Control read first, so a pass cannot be a texture that
+happened to already contain the right thing.
+
+| texture | before | after | uniform |
+| --- | --- | --- | --- |
+| 0 | `[0,0,0,255]` | `[255,0,0,255]` | yes |
+| 1 | `[0,0,0,255]` | `[0,255,0,255]` | yes |
+| 2 | `[0,0,0,255]` | `[0,0,255,255]` | yes |
+
+Distinct colours are the crosstalk check: if card 1's output had landed in card
+2's texture, this table would show it.
+
+### How deep did we have to reach?
+
+Not at all. The plan asks this because "works, but requires private wgpu access"
+is a different answer from "works, but is ugly", and it decides whether this is a
+crate or an upstream PR.
+
+| step | API |
+| --- | --- |
+| borrow the device | `RenderCreation::manual(..)` |
+| read the host's `TextureView` | `RenderAssets<GpuImage>::get(..)` |
+| hand it to the card | `ManualTextureViews` (public, `DerefMut` to `HashMap`) |
+| point the card's camera at it | `RenderTarget::TextureView(handle)` |
+
+No private items, nothing reached past Bevy into wgpu. **This is a crate.**
+
+## Gate 2 — pass
+
+> Shared-device multi-App works without reaching past Bevy's public API.
+
+It does. The grid is on the table for v1.
+
+### The architecture that falls out
+
+One App per card, one shared device, and **the host owns every texture**. Cards
+render into them; the host composites them like ordinary sprites.
+
+Worth noticing what this sidesteps. Gate 1 failed because `Extract` binds a
+`SystemState` to the `WorldId` of whichever main world was installed at
+initialisation. The multi-App design **never swaps a main world** — each App
+keeps its own permanently, so each App's extract systems bind once and stay
+bound. The obstruction that killed Phase 1 cannot arise here.
+
+E11 and E12 die with Phase 1 rather than moving behind E31, for the same reason.
+There is no shared retained render world to grow without bound, and no
+`MainEntity` keyspace shared between cards: each App has its own render world, so
+the 100% entity-id overlap E40 measured is harmless. **Offsetting entity
+allocators is not needed.**
+
+The remaining risk is no longer rendering. It is E32: each App gets its own
+`AssetServer` and `Assets<T>` — 14 asset resources per world, per the coupling
+report — so the duplication tax is now the binding constraint.
 
 ---
 
@@ -546,73 +653,77 @@ actually *mix them up*, and does offsetting each allocator fix it.
 
 # Where this leaves the spike
 
-Phase 0 passes and settles Gate 3. Phase 4 passes outright. Phase 1 fails Gate 1
-with a precise cause. Two of the three gates are now decided, and both decided
-answers are favourable to the product except the one about *how* cards get on
-screen.
+**All three gates are decided. Two pass, and the one that fails does not matter.**
 
 | gate | verdict |
 | --- | --- |
-| Gate 1 — world swap | **fail**, `Extract` binds a `SystemState` to one `WorldId` |
-| Gate 2 — shared-device multi-App | open, and now the critical path |
-| Gate 3 — is the grid a grid | **pass**, 16-32 thumbnails on integrated graphics |
+| Gate 1 — world swap | **fail** — `Extract` binds a `SystemState` to one `WorldId` |
+| Gate 2 — shared-device multi-App | **pass** — and with nothing but public API |
+| Gate 3 — is the grid a grid | **pass** — 16-32 thumbnails on integrated graphics |
 
-**The whole question is now Gate 2.** Everything else is settled or cheap:
-simulation is effectively free (~1000 worlds/frame), thumbnails are affordable
-(~16-32), snapshots are a working regression artifact, and the headless half
-ships regardless. What is not known is whether a card App's rendered texture can
-reach the host's render world without reaching past Bevy's public API.
+The premise holds. A card can be a second place to run the code, the worlds are
+genuinely isolated, several of them can be on screen at once, and none of it
+requires reaching past what Bevy exposes. **This is a crate, not an upstream PR.**
 
-**Next, in order:**
+## The architecture
 
-1. **E31 — cross-App texture handoff.** The one experiment that decides the
-   product's shape. E30 is already answered: E10 stage 3b boots three Apps on one
-   borrowed device, in-process, with no second GPU context. E31 asks whether the
-   host's render world can be handed a `GpuImage` pointing at a card app's
-   texture. `RenderAssets` is per-app; the texture underneath is shared because
-   the device is. How deep you have to reach decides whether this is a crate or
-   an upstream PR.
-2. **E32 — the duplication tax.** Each App gets its own `AssetServer` and
-   `Assets<T>` — the coupling report counts 14 asset resources per world. If four
-   apps means four copies of a 20 MB mesh, the grid has a ceiling that has
-   nothing to do with frame time, and E01's numbers stop being the binding
-   constraint.
-3. **E13 — dormancy.** Independent of rendering and still worth running. Phase 4
-   settled the `Time` half: a card advanced by an explicit fixed step, never from
-   real time, resumes after any gap with the delta it always had. What remains is
-   change ticks and events.
-4. **E50 — one world, N scopes.** More relevant than when it was written. If E31
-   fails, this stops being the yardstick and becomes the design.
+One App per card. One shared device, borrowed via `RenderCreation::manual`. The
+host owns every texture; cards render into them through `ManualTextureViews` and
+`RenderTarget::TextureView`, and the host composites the results as ordinary
+sprites. Simulation and rendering are decoupled, because they have to be:
 
-**Not worth running as specified:**
+| | in one 16.67 ms frame |
+| --- | --- |
+| card worlds that can **tick** | ~1000 (laptop), ~3800 (desktop-class) |
+| card worlds that can **draw** | ~16-32 |
 
-- **E11.** Only meaningful once something gets two main worlds in front of one
-  render world. Moves behind E31.
-- **E12.** Its first half is already answered — E40 confirmed 100% entity-id
-  overlap across worlds. Its second half (does the render world mix them up, does
-  offsetting fix it) is only reachable after E31.
-- **E20/E21/E22 as a separate phase.** E10 stage 2 produced the coupling report,
-  and stage 3b showed the migration set that matters is not the 49-resource
-  difference but the much smaller set of things that must be *shared* rather than
-  duplicated — one resource, in that configuration. E22's failure-ergonomics
-  question survives and is folded into the note below.
+"Many simulating, few visible" is not a fallback position, it is the design. And
+since E01 found cost is per-pass rather than per-pixel, the few that are visible
+should be **large**, not numerous.
 
-**Open questions the plan raised, with what is now known:**
+Regression testing is settled independently of all of this: `DynamicWorld`
+snapshots are byte-identical across machines, profiles and operating systems, so
+text goldens are the default artifact and pixel diffing stays opt-in.
+
+## What is left
+
+1. **E32 — the duplication tax.** Now the binding constraint. Each App gets its
+   own `AssetServer` and `Assets<T>` — 14 asset resources per world. If four
+   cards means four copies of a 20 MB mesh, the grid has a ceiling that has
+   nothing to do with frame time, and E01's numbers stop being what limits it.
+   This is the one remaining experiment that could still force a redesign.
+2. **E13 — dormancy.** Independent of rendering. Phase 4 settled the `Time` half:
+   a card advanced by an explicit fixed step, never from real time, resumes after
+   any gap with the delta it always had. What remains is change ticks and events.
+3. **File the Gate 1 report upstream.** Written and ready in the Phase 1 section.
+4. **E50** only if E32 goes badly. It was the yardstick; it is not the design.
+
+**Dead, and why:**
+
+- **E11, E12.** They assumed one retained render world serving several main
+  worlds. In the multi-App design each App has its own render world, so there is
+  no shared `MainEntity` keyspace and no unbounded growth to measure. The 100%
+  entity-id overlap E40 found is harmless, and **offsetting entity allocators is
+  not needed.**
+- **E20/E21/E22 as a phase.** E10 stage 2 produced the coupling report and stage
+  3b showed the useful migration set is not the 49 resources that differ but the
+  handful that must be *shared* rather than duplicated. E22's diagnostic question
+  survives as a note below.
+
+## Open questions, with what is now known
 
 - *Does the migration set want to be declared or inferred?* Declared. Inferring
-  it mechanically is easy (E10 stage 2 does it), but it produces the wrong list:
-  49 resources that differ, when the useful answer was the one resource that had
-  to be shared. The interesting property is sharing, not presence.
-- *Do lab cards and regression cards want the same ceremony?* Probably not. E42
-  showed a component-level change costs 0.26% churn and an entity-count change
+  it mechanically is easy and produces the wrong list — 49 resources that differ,
+  when the useful answer was the one that had to be shared. The interesting
+  property is sharing, not presence.
+- *Do lab cards and regression cards want the same ceremony?* Probably not. A
+  component-level change costs 0.26% golden churn and an entity-count change
   costs 25%, so a regression card needs a golden keyed by something stable while
-  a lab card needs no golden at all. Different artifacts, different ceremony.
-- *What is the right UI for "many simulating, few visible"?* No longer
-  hypothetical — the ratio is roughly 30-60x. Also: E01 says thumbnail
-  *resolution* is nearly free while thumbnail *count* is not, so the answer
-  probably involves fewer, larger, live thumbnails over a large roster of
-  simulating-but-unrendered cards.
-- *E22's diagnostic.* Still open, with one hard constraint discovered:
-  `ComponentInfo::name()` returns a placeholder unless `bevy/debug` is enabled,
-  so the crate cannot name the missing resource at runtime in a default release
-  build.
+  a lab card needs no golden at all.
+- *What is the right UI for "many simulating, few visible"?* The ratio is 30-60x,
+  and thumbnail resolution is nearly free while thumbnail count is not. So:
+  fewer, larger, live thumbnails over a long roster of simulating-but-unrendered
+  cards.
+- *E22's diagnostic.* One hard constraint found: `ComponentInfo::name()` returns
+  a placeholder unless `bevy/debug` is enabled, so the crate cannot name a
+  missing resource at runtime in a default release build.
