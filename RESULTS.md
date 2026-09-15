@@ -561,6 +561,55 @@ crate or an upstream PR.
 
 No private items, nothing reached past Bevy into wgpu. **This is a crate.**
 
+## E32 — the duplication tax
+
+**Verdict: the tax is exactly what was feared, and it is avoidable.**
+
+`cargo run --release --features render --bin e32_duplication_tax`
+
+A 2048x2048 RGBA8 texture, 16 MiB a copy — the same order as the plan's 20MB
+mesh, and a texture needs no material or pipeline to get uploaded, which keeps
+the measurement clean. VRAM read from wgpu's own allocator report rather than
+inferred from the bytes requested, so the numbers include real driver padding.
+
+**Four Apps each loading their own copy:**
+
+| | VRAM | delta |
+| --- | --- | --- |
+| baseline | 0.7 MiB | |
+| card 0 | 16.8 MiB | +16.2 |
+| card 1 | 33.0 MiB | +16.2 |
+| card 2 | 49.2 MiB | +16.2 |
+| card 3 | 65.4 MiB | +16.2 |
+
+**4.05x.** Precisely the outcome the plan named as a hard ceiling.
+
+**Four Apps sharing one GPU texture:**
+
+| | delta |
+| --- | --- |
+| owner App uploads | +16.2 MiB |
+| each of 4 borrowers | +0.2 MiB |
+
+**1.02x.** One upload backs all five Apps. The 0.2 MiB per borrower is that
+App's own overhead, not a share of the asset.
+
+The mechanism is the same insight as E31: the Apps already share a device, so
+they can share what sits behind it. `GpuImage` is cheap to clone and the clone
+points at the same `wgpu::Texture`; `RenderAssets<GpuImage>::insert` is public.
+
+### This is an API requirement, not an optimisation
+
+The tax only disappears if **the crate owns asset loading** and hands cards
+references, rather than letting each card call its own `AssetServer`. A card that
+loads its own assets pays the full 4x, and no amount of later optimisation
+recovers it — by then there are four textures on the GPU.
+
+That has to be designed in from the start, and it constrains the card API: a card
+cannot be handed a bare `AssetServer` and left to its own devices. It is the
+second thing on this list (after the coupling report) that the crate must take
+ownership of rather than delegate.
+
 ## Gate 2 — pass
 
 > Shared-device multi-App works without reaching past Bevy's public API.
@@ -584,9 +633,9 @@ There is no shared retained render world to grow without bound, and no
 the 100% entity-id overlap E40 measured is harmless. **Offsetting entity
 allocators is not needed.**
 
-The remaining risk is no longer rendering. It is E32: each App gets its own
-`AssetServer` and `Assets<T>` — 14 asset resources per world, per the coupling
-report — so the duplication tax is now the binding constraint.
+The remaining risk was E32, the asset duplication tax, and it is measured above:
+real at 4.05x if cards load independently, 1.02x if the crate owns loading. It
+constrains the API rather than the architecture.
 
 ---
 
@@ -687,16 +736,21 @@ text goldens are the default artifact and pixel diffing stays opt-in.
 
 ## What is left
 
-1. **E32 — the duplication tax.** Now the binding constraint. Each App gets its
-   own `AssetServer` and `Assets<T>` — 14 asset resources per world. If four
-   cards means four copies of a 20 MB mesh, the grid has a ceiling that has
-   nothing to do with frame time, and E01's numbers stop being what limits it.
-   This is the one remaining experiment that could still force a redesign.
-2. **E13 — dormancy.** Independent of rendering. Phase 4 settled the `Time` half:
-   a card advanced by an explicit fixed step, never from real time, resumes after
-   any gap with the delta it always had. What remains is change ticks and events.
-3. **File the Gate 1 report upstream.** Written and ready in the Phase 1 section.
-4. **E50** only if E32 goes badly. It was the yardstick; it is not the design.
+Every experiment that could have forced a redesign has been run. What remains is
+one non-blocking measurement and the writing.
+
+1. **E13 — dormancy.** The only experiment left, and it cannot change the
+   architecture. Phase 4 settled the `Time` half: a card advanced by an explicit
+   fixed step, never from real time, resumes after any gap with the delta it
+   always had. What remains is change ticks and events in a world that has not
+   been ticked for a long time. Worth doing before the API is fixed, because a
+   card that behaves differently after being backgrounded is worse than a card
+   that doesn't render.
+2. **File the Gate 1 report upstream.** Written and ready in the Phase 1 section.
+   It is the only precise account of why one render world cannot serve two main
+   worlds, and it is relevant to Bevy's own editor work.
+3. **Write the crate.** The spike has done its job; nothing here should survive
+   into it.
 
 **Dead, and why:**
 
@@ -709,6 +763,23 @@ text goldens are the default artifact and pixel diffing stays opt-in.
   3b showed the useful migration set is not the 49 resources that differ but the
   handful that must be *shared* rather than duplicated. E22's diagnostic question
   survives as a note below.
+- **E50.** It was the yardstick in case everything above failed. Everything above
+  did not fail.
+
+## Two things the crate must own
+
+Both fell out of experiments rather than design, and both constrain the API
+rather than the architecture — which means they have to be decided early.
+
+**Asset loading.** E32: a card that calls its own `AssetServer` pays a full copy
+of every asset, 4.05x across four cards. The crate has to own loading and hand
+cards references. This cannot be retrofitted as an optimisation.
+
+**The coupling report.** E10 stage 2: the diagnostic the crate gives a user whose
+plugin will not start in a card world is a set difference over resources, and it
+is the product as much as the grid is. One hard constraint found —
+`ComponentInfo::name()` returns a placeholder unless `bevy/debug` is enabled, so
+the crate cannot name a missing resource at runtime in a default release build.
 
 ## Open questions, with what is now known
 

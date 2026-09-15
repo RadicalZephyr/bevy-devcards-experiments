@@ -67,3 +67,8 @@ required-features = ["render"]
 name = "e31_cross_app_texture"
 path = "src/bin/e31_cross_app_texture.rs"
 required-features = ["render"]
+
+[[bin]]
+name = "e32_duplication_tax"
+path = "src/bin/e32_duplication_tax.rs"
+required-features = ["render"]

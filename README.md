@@ -29,6 +29,7 @@ cargo run --bin e40_subapp_worlds
 | `e42_snapshot_churn` | 4 | Is a whole-world text golden reviewable in a pull request? |
 | `e10_swap_render` | 1 | Does a card world swapped into the App's main world slot render? |
 | `e31_cross_app_texture` | 3 | Can a second App render into a texture the host owns? |
+| `e32_duplication_tax` | 3 | Does each App pay a full copy of every asset? |
 
 Phase 1 needs the renderer, so it sits behind a feature:
 
