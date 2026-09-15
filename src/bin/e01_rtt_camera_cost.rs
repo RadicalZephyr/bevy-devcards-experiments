@@ -21,10 +21,11 @@ use std::time::Instant;
 
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::RenderTarget;
-use bevy::image::ToExtents;
 use bevy::prelude::*;
 use bevy::render::RenderPlugin;
-use bevy::render::render_resource::{PollType, TextureDimension, TextureFormat, TextureUsages};
+use bevy::render::render_resource::{
+    Extent3d, PollType, TextureDimension, TextureFormat, TextureUsages,
+};
 use bevy::render::renderer::RenderDevice;
 use bevy::window::ExitCondition;
 
@@ -44,7 +45,7 @@ fn main() {
         println!("  WARNING: debug build. Rerun with --release before quoting.");
     }
 
-    let mut probe = build_app();
+    let probe = build_app();
     let adapter_name = probe
         .world()
         .get_resource::<bevy::render::renderer::RenderAdapterInfo>()
@@ -145,7 +146,7 @@ fn scene(app: &mut App, cameras: usize, size: u32) {
     let sprite_image = {
         let mut images = app.world_mut().resource_mut::<Assets<Image>>();
         images.add(Image::new_fill(
-            (4u32, 4u32).to_extents(),
+            extent(4, 4),
             TextureDimension::D2,
             &[255, 255, 255, 255],
             TextureFormat::Rgba8UnormSrgb,
@@ -172,7 +173,7 @@ fn scene(app: &mut App, cameras: usize, size: u32) {
     for _ in 0..cameras {
         let target = {
             let mut image = Image::new_uninit(
-                (size, size).to_extents(),
+                extent(size, size),
                 TextureDimension::D2,
                 TextureFormat::Rgba8UnormSrgb,
                 RenderAssetUsages::RENDER_WORLD,
@@ -183,5 +184,13 @@ fn scene(app: &mut App, cameras: usize, size: u32) {
         };
         app.world_mut()
             .spawn((Camera2d, target, Transform::IDENTITY));
+    }
+}
+
+fn extent(width: u32, height: u32) -> Extent3d {
+    Extent3d {
+        width,
+        height,
+        depth_or_array_layers: 1,
     }
 }

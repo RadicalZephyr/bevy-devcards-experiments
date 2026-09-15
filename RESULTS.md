@@ -26,6 +26,100 @@ Deliberately disabled, because both would let entropy into the results:
 
 ---
 
+# Phase 0 — Baselines
+
+Run after Phases 4 and 1, which was the wrong order: the plan says E01 "bounds
+the grid regardless of which approach wins, so it's worth knowing before you
+invest in any of them", and Phase 3 was about to be invested in. Both baselines
+pass, and together they settle Gate 3.
+
+## E00 — headless world tick cost
+
+**Verdict: ~1000 realistic card worlds tickable per frame.**
+
+`cargo run --release --bin e00_tick_cost`
+
+Measured two ways, because they are not the same question. One world ticked many
+times isolates schedule overhead; N worlds ticked once each round-robin is what a
+card grid actually does, and touches N separate archetype stores per pass.
+
+| shape | 1 world | 64 worlds, round-robin | cards @60fps | isolation penalty |
+| --- | --- | --- | --- | --- |
+| empty world, 1 no-op system | 5.3 µs | 8.9 µs | ~1876 | 1.67x |
+| 200 entities, 5 systems | 15.5 µs | 17.0 µs | ~980 | 1.09x |
+| the Phase 4 card sim | 7.9 µs | 15.6 µs | ~1070 | 1.96x |
+
+Two things worth keeping:
+
+**An empty card still costs ~5 µs to tick**, because it runs the whole `Main`
+schedule — `First`, `PreUpdate`, `RunFixedMainLoop`, `Update`, `PostUpdate`,
+`Last`, plus the message update system. That is the floor no matter how trivial
+the card is, and it caps the design at roughly 1900 cards per frame even if they
+do nothing at all.
+
+**Isolation is cheap.** Spreading ticks across 64 separate worlds rather than
+repeating them on one costs between 1.1x and 2.0x. Whatever eventually stops
+this design, per-world cache behaviour is not it.
+
+*Methodology note, because the first run of this got it wrong:* the initial
+harness reported the empty world at 2x the cost of the busy one. That was CPU
+frequency ramp on the first timed loop of the process, not a finding. The harness
+now spins the clock up before timing anything and takes best-of-5 over a fixed
+world-tick count.
+
+## E01 — render-to-texture camera cost
+
+**Verdict: 32 thumbnails at 128x128, 16 at 512x512, on integrated graphics.**
+
+`cargo run --release --features render --bin e01_rtt_camera_cost`
+
+N cameras in one world, each targeting its own `Image`, sharing a 24-sprite
+scene. Adapter: **Intel HD Graphics 620 (integrated)** — a deliberately weak
+baseline, since it is what a lot of users have.
+
+| cameras | 128x128 ms/frame | 512x512 ms/frame |
+| --- | --- | --- |
+| 1 | 1.53 | 1.79 |
+| 2 | 1.78 | 2.01 |
+| 4 | 2.95 | 2.91 |
+| 8 | 4.65 | 5.73 |
+| 16 | 7.14 | 9.70 |
+| 32 | 10.98 | **18.08** |
+| 64 | **23.35** | **36.64** |
+
+**The cost is per-pass, not per-pixel.** 512x512 is sixteen times the pixels of
+128x128 and costs about 1.5x per camera — roughly 0.35-0.6 ms either way, nearly
+flat as the count grows. The consequence for the UI is the opposite of the
+intuitive one: **make thumbnails bigger rather than more numerous.** Going from
+128px to 512px costs about half a camera; adding a camera costs a whole one.
+
+Two caveats on the numbers above. The scene is deliberately small, so these are
+ceilings rather than typical. And "in budget" spends the *entire* 16.67 ms on
+rendering, leaving nothing for simulation or UI — on a realistic half-budget
+split it is closer to **16 thumbnails at 128px and 8 at 512px**.
+
+## Gate 3 — pass
+
+> Fewer than six simultaneous thumbnails in budget means the grid isn't a grid.
+
+Sixteen to thirty-two fit on integrated graphics, and eight to sixteen on a
+realistic budget split. The grid is a grid, and "many states at once" survives as
+the pitch.
+
+The asymmetry the plan suspected is real and large:
+
+| | in one 16.67 ms frame |
+| --- | --- |
+| card worlds that can **tick** | ~1000 |
+| card worlds that can **draw** | ~16-32 |
+
+That is a factor of roughly 30-60. The design is **"many simulating, few
+visible"**, it is not a close call, and the UI should be built around that
+asymmetry from the start rather than discovering it later. Simulation is
+effectively free; a thumbnail is the scarce resource.
+
+---
+
 # Phase 4 — Headless and CI
 
 Run in parallel with Phase 1, per the plan, because it de-risks the half of the
@@ -93,12 +187,9 @@ card's allocator is offset.
 Quote the release number. Debug is 59x slower and would put Gate 3 in the wrong
 place entirely.
 
-This is a partial early answer to Gate 3 and it points the same way the plan
-suspected: if E01 caps visible thumbnails in the single digits while thousands
-of worlds can tick, the design is "many simulating, few visible" and the UI
-should be built around that asymmetry from the start. E00 and E01 still need
-running for the real gate; this is the simulation half only, on a deliberately
-small card.
+Superseded by E00, which measures this properly: ~980 worlds per frame for a
+200-entity card, round-robin. E40's number is higher because its cards are
+smaller and it ticks them through an `App` rather than directly. Quote E00.
 
 ## E41 — snapshot determinism
 
@@ -441,50 +532,73 @@ actually *mix them up*, and does offsetting each allocator fix it.
 
 # Where this leaves the spike
 
-Phase 4 passes outright. Phase 1 fails its gate with a precise cause. Nothing
-here has touched Phase 0's baselines yet, and Gate 3 is still open.
+Phase 0 passes and settles Gate 3. Phase 4 passes outright. Phase 1 fails Gate 1
+with a precise cause. Two of the three gates are now decided, and both decided
+answers are favourable to the product except the one about *how* cards get on
+screen.
+
+| gate | verdict |
+| --- | --- |
+| Gate 1 — world swap | **fail**, `Extract` binds a `SystemState` to one `WorldId` |
+| Gate 2 — shared-device multi-App | open, and now the critical path |
+| Gate 3 — is the grid a grid | **pass**, 16-32 thumbnails on integrated graphics |
+
+**The whole question is now Gate 2.** Everything else is settled or cheap:
+simulation is effectively free (~1000 worlds/frame), thumbnails are affordable
+(~16-32), snapshots are a working regression artifact, and the headless half
+ships regardless. What is not known is whether a card App's rendered texture can
+reach the host's render world without reaching past Bevy's public API.
 
 **Next, in order:**
 
-1. **Phase 0 (E00, E01).** Still unrun, and Gate 3 depends on it. E40 supplies
-   half of E00 already: ~2346 small card worlds tickable in a 16.67 ms budget in
-   release. E01 — how many render-to-texture cameras fit in the same budget — is
-   the missing half, and the gap between the two numbers is the whole UI
-   argument.
-2. **Phase 3, starting at E31.** E30 is answered: a second App boots on a
-   borrowed device (E10 stage 3b). E31 — can the host's render world be handed a
-   `GpuImage` pointing at a card app's texture — is the open question, and the
-   one that decides whether the grid exists.
-3. **E32, the duplication tax.** Each App gets its own `AssetServer` and
-   `Assets<T>`; the coupling report shows 14 asset resources per world. If four
+1. **E31 — cross-App texture handoff.** The one experiment that decides the
+   product's shape. E30 is already answered: E10 stage 3b boots three Apps on one
+   borrowed device, in-process, with no second GPU context. E31 asks whether the
+   host's render world can be handed a `GpuImage` pointing at a card app's
+   texture. `RenderAssets` is per-app; the texture underneath is shared because
+   the device is. How deep you have to reach decides whether this is a crate or
+   an upstream PR.
+2. **E32 — the duplication tax.** Each App gets its own `AssetServer` and
+   `Assets<T>` — the coupling report counts 14 asset resources per world. If four
    apps means four copies of a 20 MB mesh, the grid has a ceiling that has
-   nothing to do with frame time.
-4. **E13 (dormancy).** Independent of rendering and still worth running. Phase 4
+   nothing to do with frame time, and E01's numbers stop being the binding
+   constraint.
+3. **E13 — dormancy.** Independent of rendering and still worth running. Phase 4
    settled the `Time` half: a card advanced by an explicit fixed step, never from
    real time, resumes after any gap with the delta it always had. What remains is
    change ticks and events.
-5. **Phase 5 (E50).** More relevant now than when it was written. If Phase 3 also
-   fails, "one world, N scopes" is not merely the yardstick, it is the design.
+4. **E50 — one world, N scopes.** More relevant than when it was written. If E31
+   fails, this stops being the yardstick and becomes the design.
 
 **Not worth running as specified:**
 
 - **E11.** Only meaningful once something gets two main worlds in front of one
   render world. Moves behind E31.
 - **E12.** Its first half is already answered — E40 confirmed 100% entity-id
-  overlap across worlds. Its second half (does the render world mix them up,
-  does offsetting fix it) is only reachable after E31.
+  overlap across worlds. Its second half (does the render world mix them up, does
+  offsetting fix it) is only reachable after E31.
+- **E20/E21/E22 as a separate phase.** E10 stage 2 produced the coupling report,
+  and stage 3b showed the migration set that matters is not the 49-resource
+  difference but the much smaller set of things that must be *shared* rather than
+  duplicated — one resource, in that configuration. E22's failure-ergonomics
+  question survives and is folded into the note below.
 
 **Open questions the plan raised, with what is now known:**
 
-- *Does the migration set want to be declared or inferred?* The set difference in
-  E10 stage 2 infers it mechanically, and the answer came out at 49 real
-  resources. But stage 3b showed the useful set is not that list — it is the much
-  smaller set of things that must be **shared** rather than duplicated, which was
-  one resource. "Declared" now looks clearly right, because the interesting
-  question is sharing, not presence.
-- *Do lab cards and regression cards want the same ceremony?* E42 sharpened this:
-  a component-level change costs 0.26% churn and an entity-count change costs
-  25%. A regression card needs a golden keyed by something stable; a lab card
-  needs no golden at all. Different artifacts, so probably different ceremony.
-- *What is the right UI for "many simulating, few visible"?* Still open, and
-  still blocked on E01.
+- *Does the migration set want to be declared or inferred?* Declared. Inferring
+  it mechanically is easy (E10 stage 2 does it), but it produces the wrong list:
+  49 resources that differ, when the useful answer was the one resource that had
+  to be shared. The interesting property is sharing, not presence.
+- *Do lab cards and regression cards want the same ceremony?* Probably not. E42
+  showed a component-level change costs 0.26% churn and an entity-count change
+  costs 25%, so a regression card needs a golden keyed by something stable while
+  a lab card needs no golden at all. Different artifacts, different ceremony.
+- *What is the right UI for "many simulating, few visible"?* No longer
+  hypothetical — the ratio is roughly 30-60x. Also: E01 says thumbnail
+  *resolution* is nearly free while thumbnail *count* is not, so the answer
+  probably involves fewer, larger, live thumbnails over a large roster of
+  simulating-but-unrendered cards.
+- *E22's diagnostic.* Still open, with one hard constraint discovered:
+  `ComponentInfo::name()` returns a placeholder unless `bevy/debug` is enabled,
+  so the crate cannot name the missing resource at runtime in a default release
+  build.

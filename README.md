@@ -22,6 +22,8 @@ cargo run --bin e40_subapp_worlds
 
 | Binary | Phase | Question |
 | --- | --- | --- |
+| `e00_tick_cost` | 0 | How many card worlds can tick in one frame? |
+| `e01_rtt_camera_cost` | 0 | How many render-to-texture cameras fit in one frame? |
 | `e40_subapp_worlds` | 4 | Do card worlds work as headless sub-apps with their own fixed-step clocks? |
 | `e41_snapshot_determinism` | 4 | Are reflection snapshots byte-identical across runs, profiles, and machines? |
 | `e42_snapshot_churn` | 4 | Is a whole-world text golden reviewable in a pull request? |
@@ -30,8 +32,10 @@ cargo run --bin e40_subapp_worlds
 Phase 1 needs the renderer, so it sits behind a feature:
 
 ```bash
-cargo run --features render --bin e10_swap_render
+cargo run --release --features render --bin e10_swap_render
 ```
+
+The benchmarks (`e00`, `e01`) are only meaningful in release.
 
 E41 compares against a committed golden. To regenerate it after an intentional
 change to the card simulation:
