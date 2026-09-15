@@ -442,6 +442,57 @@ presents card 1, a different `World`, and every extract system rejects it.
 The sequence is exact: swap 1 (host → card 0) ticks; swap 2 (card 0 → card 1)
 panics.
 
+## E13 — dormancy
+
+**Verdict: PASS.** Dormancy is not observable. Independent of the swap question,
+and it applies to the architecture that actually won: in the Phase 3 design a
+dormant card is an App whose `update()` is not called, which is exactly what this
+measures.
+
+`cargo run --release --bin e13_dormancy`
+
+The plan calls this a sleeper, and it is right to — nothing about it is visible
+until someone leaves a card off screen for a minute. The real question is
+whether anything can **leak into a world nobody is ticking**: real time, a shared
+registry, a global tick counter, an event buffer someone else drains.
+
+A card sleeps for 1000 frames and 150 ms of real time, while two other cards tick
+throughout. Making the dormancy realistic is the point — a card paused in an
+otherwise idle process would prove nothing.
+
+| check | result |
+| --- | --- |
+| **A.** dormant vs continuous, same seed | byte-identical (`fnv1a64=9dd2ad948ccc2756`) |
+| **B.** `Changed<Stable>` / `Added<Stable>` on the resume tick | 0 / 0 |
+| **C.** `delta` on resume | 15.625 ms — the fixed step, not the 150 ms gap |
+| **C.** virtual elapsed | exactly `step x ticks` |
+| **D.** message written before the sleep | still there, read exactly once on resume |
+| **E.** change-tick wraparound | no spurious changes after the clamp |
+
+**A is the headline.** A card interrupted by a long dormancy ends in exactly the
+state it would have reached without one, byte for byte. Everything else explains
+why.
+
+**On E, the wraparound.** The plan asks whether `check_change_ticks` misbehaves on
+a world that has not been ticked in a long time. Bevy only runs that check from
+`Schedule::run`, gated on the world's own counters, so a dormant world never runs
+it — but that is an argument rather than a measurement, so the experiment
+measures it. `CHECK_TICK_THRESHOLD` is 518.4 million ticks, about a hundred days
+at 60fps, and `increment_change_tick` is public: the probe drives a world's tick
+from 57 to 518,401,081, confirms `check_change_ticks` actually fired, and checks
+that clamping the old ticks did not make untouched components look new. It did
+not.
+
+(The loop that advances the tick collapses to a single add in release, so the
+elapsed time is meaningless. The tick values and the `fired: true` are the
+evidence, which is why the experiment prints them.)
+
+**Why it holds.** Change ticks, `MessageRegistry`, and `Time` are all per-`World`,
+and the card's clock is advanced by an explicit fixed step rather than read from
+the wall. A world nobody ticks is frozen, not aging — messages are paused rather
+than dropped or accumulating, and relative tick ages are frozen along with
+everything else.
+
 ## Gate 1 — fail
 
 The gate asks for two worlds rendering, a bounded render-world entity count, and
@@ -736,20 +787,15 @@ text goldens are the default artifact and pixel diffing stays opt-in.
 
 ## What is left
 
-Every experiment that could have forced a redesign has been run. What remains is
-one non-blocking measurement and the writing.
+**Every experiment in the plan that can still change anything has been run.** All
+three gates are decided, and the two that could have forced a redesign — E32's
+duplication tax and E13's dormancy — both came back clean. What remains is
+writing.
 
-1. **E13 — dormancy.** The only experiment left, and it cannot change the
-   architecture. Phase 4 settled the `Time` half: a card advanced by an explicit
-   fixed step, never from real time, resumes after any gap with the delta it
-   always had. What remains is change ticks and events in a world that has not
-   been ticked for a long time. Worth doing before the API is fixed, because a
-   card that behaves differently after being backgrounded is worse than a card
-   that doesn't render.
-2. **File the Gate 1 report upstream.** Written and ready in the Phase 1 section.
+1. **File the Gate 1 report upstream.** Written and ready in the Phase 1 section.
    It is the only precise account of why one render world cannot serve two main
    worlds, and it is relevant to Bevy's own editor work.
-3. **Write the crate.** The spike has done its job; nothing here should survive
+2. **Write the crate.** The spike has done its job; nothing here should survive
    into it.
 
 **Dead, and why:**

@@ -84,6 +84,12 @@ jobs:
       - name: E42 — snapshot reviewability
         run: cargo run --locked ${{ steps.flags.outputs.cargo }} --bin e42_snapshot_churn
 
+      # E13 asserts rather than measures, so unlike E00 it belongs on every
+      # matrix entry: "did anything leak into a world nobody is ticking" is
+      # exactly the kind of thing that could differ across platforms.
+      - name: E13 — dormancy
+        run: cargo run --locked ${{ steps.flags.outputs.cargo }} --bin e13_dormancy
+
       # Smoke test only. E00 is a benchmark, and a shared CI runner is the wrong
       # place to measure one — these numbers must not be quoted for Gate 3. The
       # step exists so the harness cannot rot unnoticed.
