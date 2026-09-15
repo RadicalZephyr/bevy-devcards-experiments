@@ -57,3 +57,8 @@ render = [
 name = "e10_swap_render"
 path = "src/bin/e10_swap_render.rs"
 required-features = ["render"]
+
+[[bin]]
+name = "e01_rtt_camera_cost"
+path = "src/bin/e01_rtt_camera_cost.rs"
+required-features = ["render"]

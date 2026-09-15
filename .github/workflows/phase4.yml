@@ -1,8 +1,10 @@
-name: Phase 4 — headless cards
+name: Headless experiments (Phase 0 + Phase 4)
 
-# Phase 4 of the feasibility spike: card worlds as headless sub-apps, and
-# reflection snapshots as a golden artifact. None of it touches the renderer, so
-# it needs no GPU, no display, and no system libraries — which is the point.
+# The headless half of the spike: Phase 0's tick-cost baseline and Phase 4's
+# card worlds and snapshot goldens. None of it touches the renderer, so it needs
+# no GPU, no display, and no system libraries — which is the point.
+#
+# Phase 1's experiments need a GPU and are not run here.
 #
 # The matrix exists to answer one specific question from the plan: are snapshots
 # byte-identical across debug/release and across machines? Ubuntu covers the
@@ -81,6 +83,13 @@ jobs:
 
       - name: E42 — snapshot reviewability
         run: cargo run --locked ${{ steps.flags.outputs.cargo }} --bin e42_snapshot_churn
+
+      # Smoke test only. E00 is a benchmark, and a shared CI runner is the wrong
+      # place to measure one — these numbers must not be quoted for Gate 3. The
+      # step exists so the harness cannot rot unnoticed.
+      - name: E00 — tick cost (smoke test, numbers not meaningful here)
+        if: matrix.os == 'ubuntu-latest' && matrix.profile == 'release'
+        run: cargo run --locked --release --bin e00_tick_cost
 
       # On an E41 failure this is the whole story: the snapshot this runner
       # actually produced, ready to diff against the committed golden.
