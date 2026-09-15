@@ -61,6 +61,20 @@ do nothing at all.
 repeating them on one costs between 1.1x and 2.0x. Whatever eventually stops
 this design, per-world cache behaviour is not it.
 
+A second data point, from the CI smoke run on a GitHub `ubuntu-latest` runner —
+shared hardware, so the magnitudes are indicative rather than measurements:
+
+| shape | 64 worlds, round-robin | cards @60fps | penalty |
+| --- | --- | --- | --- |
+| empty world, 1 no-op system | 2.4 µs | ~6858 | 1.19x |
+| 200 entities, 5 systems | 4.4 µs | ~3802 | 1.19x |
+| the Phase 4 card sim | 3.8 µs | ~4441 | 1.29x |
+
+About 4x the local laptop figures, with the same ordering and a slightly smaller
+isolation penalty. So the honest range for a realistic 200-entity card is
+**~1000 worlds per frame on a laptop, ~3800 on a desktop-class machine**. Quote
+the laptop number; it is the one that constrains a user.
+
 *Methodology note, because the first run of this got it wrong:* the initial
 harness reported the empty world at 2x the cost of the busy one. That was CPU
 frequency ramp on the first timed loop of the process, not a finding. The harness
