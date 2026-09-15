@@ -1,6 +1,16 @@
-# DRAFT — upstream issue for bevyengine/bevy
+# DO NOT FILE AS-IS — research notes, not a submission
 
-Not filed. Review before posting.
+Bevy's contribution policy forbids AI-generated prose:
+https://bevy.org/learn/contribute/policies/ai/ (item 2).
+
+This text was written by Claude. It therefore **cannot be posted**, by anyone, in
+this form. To take it upstream it has to be rewritten from scratch in the
+filer's own words, with disclosure that an AI found the issue.
+
+What is reusable is the *findings*: the panic, the file/line citations, the repro
+steps, the visibility table, and the related-issue numbers. Those are verified
+facts, and they were checked against the Bevy 0.19.1 sources and the live issue
+tracker. The prose around them is not reusable.
 
 Suggested labels: `A-Rendering`, `A-ECS`, `C-Bug` or `C-Feature` (maintainer's call — see
 *Is this a bug?* below).
