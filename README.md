@@ -59,3 +59,4 @@ display server, and no apt packages.
 - `src/snapshot.rs` — reflection snapshot of a world (see the 0.19 note inside)
 - `src/diff.rs` — line diff, so churn is a number
 - `goldens/` — committed snapshots E41 checks against
+- `upstream-issue.md` — **unfiled draft** of the Gate 1 report for bevyengine/bevy
