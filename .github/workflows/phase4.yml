@@ -1,0 +1,106 @@
+name: Phase 4 — headless cards
+
+# Phase 4 of the feasibility spike: card worlds as headless sub-apps, and
+# reflection snapshots as a golden artifact. None of it touches the renderer, so
+# it needs no GPU, no display, and no system libraries — which is the point.
+#
+# The matrix exists to answer one specific question from the plan: are snapshots
+# byte-identical across debug/release and across machines? Ubuntu covers the
+# profile split; macOS and Windows extend it to "a runner that is not yours",
+# which is what a user's CI will actually be.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  experiments:
+    name: ${{ matrix.os }} / ${{ matrix.profile }}
+    runs-on: ${{ matrix.os }}
+    # One red job is a result, not a reason to cancel the others. The whole
+    # point is to see *which* combinations diverge.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            profile: debug
+          - os: ubuntu-latest
+            profile: release
+          - os: macos-latest
+            profile: release
+          - os: windows-latest
+            profile: release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.profile }}
+
+      # Every result line in RESULTS.md is only meaningful next to the exact
+      # toolchain that produced it.
+      - name: Record environment
+        shell: bash
+        run: |
+          echo "os=${{ matrix.os }} profile=${{ matrix.profile }}"
+          rustc --version --verbose
+          cargo --version
+
+      - name: Set profile flag
+        id: flags
+        shell: bash
+        run: |
+          if [ "${{ matrix.profile }}" = "release" ]; then
+            echo "cargo=--release" >> "$GITHUB_OUTPUT"
+          else
+            echo "cargo=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        run: cargo build --locked ${{ steps.flags.outputs.cargo }} --all-targets
+
+      # Run twice on purpose: the second run compares its sub-app tick order
+      # against the first's, which is how the ordering instability shows up.
+      - name: E40 — N worlds as SubApps
+        run: |
+          cargo run --locked ${{ steps.flags.outputs.cargo }} --bin e40_subapp_worlds
+          echo "----- second run (ordering comparison) -----"
+          cargo run --locked ${{ steps.flags.outputs.cargo }} --bin e40_subapp_worlds
+
+      - name: E41 — snapshot determinism
+        run: cargo run --locked ${{ steps.flags.outputs.cargo }} --bin e41_snapshot_determinism
+
+      - name: E42 — snapshot reviewability
+        run: cargo run --locked ${{ steps.flags.outputs.cargo }} --bin e42_snapshot_churn
+
+      # On an E41 failure this is the whole story: the snapshot this runner
+      # actually produced, ready to diff against the committed golden.
+      - name: Upload snapshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshots-${{ matrix.os }}-${{ matrix.profile }}
+          path: |
+            target/e41_actual.scn.ron
+            target/e42/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check

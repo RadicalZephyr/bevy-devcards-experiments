@@ -1,0 +1,379 @@
+(
+  resources: {
+    "bevy_devcards_experiments::card::CardClock": (
+      tick: 600,
+    ),
+    "bevy_devcards_experiments::card::CardConfig": (
+      name: "determinism",
+      seed: 42,
+      spawn_every: 3,
+      max_age: 120,
+      extra_startup_entity: false,
+    ),
+    "bevy_devcards_experiments::card::Rng": (
+      state: 7130151409105168077,
+    ),
+  },
+  entities: {
+    4294967117: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 97,
+        ),
+        "bevy_devcards_experiments::card::Position": ((63.31155, 23.832716)),
+        "bevy_devcards_experiments::card::Velocity": ((-44.060703, 12.064917)),
+      },
+    ),
+    4294967118: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 100,
+        ),
+        "bevy_devcards_experiments::card::Position": ((37.99073, -50.26245)),
+        "bevy_devcards_experiments::card::Velocity": ((27.618896, -35.152153)),
+      },
+    ),
+    4294967119: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 103,
+        ),
+        "bevy_devcards_experiments::card::Position": ((61.2751, -14.846625)),
+        "bevy_devcards_experiments::card::Velocity": ((-43.598297, -11.654331)),
+      },
+    ),
+    4294967120: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 106,
+        ),
+        "bevy_devcards_experiments::card::Position": ((-43.81902, 28.890059)),
+        "bevy_devcards_experiments::card::Velocity": ((-30.877253, 15.237024)),
+      },
+    ),
+    4294967121: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 109,
+        ),
+        "bevy_devcards_experiments::card::Position": ((-54.956856, -51.00918)),
+        "bevy_devcards_experiments::card::Velocity": ((-35.423264, -32.441814)),
+      },
+    ),
+    4294967122: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 112,
+        ),
+        "bevy_devcards_experiments::card::Position": ((-44.75001, -62.104694)),
+        "bevy_devcards_experiments::card::Velocity": ((-21.801252, -31.202774)),
+      },
+    ),
+    4294967123: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 115,
+        ),
+        "bevy_devcards_experiments::card::Position": ((-26.342886, 39.905823)),
+        "bevy_devcards_experiments::card::Velocity": ((-18.530588, 18.13817)),
+      },
+    ),
+    4294967124: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 118,
+        ),
+        "bevy_devcards_experiments::card::Position": ((-24.176344, -3.6004293)),
+        "bevy_devcards_experiments::card::Velocity": ((-13.259251, -5.619135)),
+      },
+    ),
+    8589934453: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 94,
+        ),
+        "bevy_devcards_experiments::card::Position": ((-56.154007, 60.37064)),
+        "bevy_devcards_experiments::card::Velocity": ((45.649536, -46.455795)),
+      },
+    ),
+    8589934454: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 91,
+        ),
+        "bevy_devcards_experiments::card::Position": ((12.342455, 61.831253)),
+        "bevy_devcards_experiments::card::Velocity": ((10.014627, -46.266483)),
+      },
+    ),
+    8589934455: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 88,
+        ),
+        "bevy_devcards_experiments::card::Position": ((52.4851, 51.288925)),
+        "bevy_devcards_experiments::card::Velocity": ((33.30404, 35.933365)),
+      },
+    ),
+    8589934456: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 85,
+        ),
+        "bevy_devcards_experiments::card::Position": ((-45.28139, 10.9042)),
+        "bevy_devcards_experiments::card::Velocity": ((-33.59398, 13.146818)),
+      },
+    ),
+    8589934457: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 82,
+        ),
+        "bevy_devcards_experiments::card::Position": ((-18.061869, 30.62677)),
+        "bevy_devcards_experiments::card::Velocity": ((-10.42911, 23.420465)),
+      },
+    ),
+    8589934458: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 79,
+        ),
+        "bevy_devcards_experiments::card::Position": ((52.906033, -50.216194)),
+        "bevy_devcards_experiments::card::Velocity": ((39.48195, -35.906273)),
+      },
+    ),
+    8589934459: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 76,
+        ),
+        "bevy_devcards_experiments::card::Position": ((18.539167, 6.8861732)),
+        "bevy_devcards_experiments::card::Velocity": ((20.657564, 10.620518)),
+      },
+    ),
+    8589934460: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 73,
+        ),
+        "bevy_devcards_experiments::card::Position": ((40.194557, 17.257706)),
+        "bevy_devcards_experiments::card::Velocity": ((28.803978, 9.101435)),
+      },
+    ),
+    8589934461: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 70,
+        ),
+        "bevy_devcards_experiments::card::Position": ((12.88324, 37.297028)),
+        "bevy_devcards_experiments::card::Velocity": ((5.740162, 28.599335)),
+      },
+    ),
+    8589934462: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 67,
+        ),
+        "bevy_devcards_experiments::card::Position": ((36.809273, -2.6724992)),
+        "bevy_devcards_experiments::card::Velocity": ((33.22431, -8.6129265)),
+      },
+    ),
+    8589934463: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 64,
+        ),
+        "bevy_devcards_experiments::card::Position": ((17.605087, -1.7690766)),
+        "bevy_devcards_experiments::card::Velocity": ((19.180058, -8.541887)),
+      },
+    ),
+    8589934464: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 61,
+        ),
+        "bevy_devcards_experiments::card::Position": ((6.3184876, 21.666039)),
+        "bevy_devcards_experiments::card::Velocity": ((0.6701431, 23.092695)),
+      },
+    ),
+    8589934465: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 58,
+        ),
+        "bevy_devcards_experiments::card::Position": ((-23.33466, -28.728405)),
+        "bevy_devcards_experiments::card::Velocity": ((-25.219734, -30.634941)),
+      },
+    ),
+    8589934466: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 55,
+        ),
+        "bevy_devcards_experiments::card::Position": ((27.76857, -26.775658)),
+        "bevy_devcards_experiments::card::Velocity": ((41.10302, -21.851572)),
+      },
+    ),
+    8589934467: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 52,
+        ),
+        "bevy_devcards_experiments::card::Position": ((-38.724762, -18.551268)),
+        "bevy_devcards_experiments::card::Velocity": ((-41.787468, -16.67537)),
+      },
+    ),
+    8589934468: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 49,
+        ),
+        "bevy_devcards_experiments::card::Position": ((-26.410278, 13.0501)),
+        "bevy_devcards_experiments::card::Velocity": ((-43.397713, 13.861719)),
+      },
+    ),
+    8589934469: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 46,
+        ),
+        "bevy_devcards_experiments::card::Position": ((16.277742, -19.256062)),
+        "bevy_devcards_experiments::card::Velocity": ((19.34689, -15.815157)),
+      },
+    ),
+    8589934470: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 43,
+        ),
+        "bevy_devcards_experiments::card::Position": ((31.922308, 32.534996)),
+        "bevy_devcards_experiments::card::Velocity": ((42.820587, 38.08354)),
+      },
+    ),
+    8589934471: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 40,
+        ),
+        "bevy_devcards_experiments::card::Position": ((-5.3209453, 28.080202)),
+        "bevy_devcards_experiments::card::Velocity": ((-14.988705, 39.973885)),
+      },
+    ),
+    8589934472: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 37,
+        ),
+        "bevy_devcards_experiments::card::Position": ((-13.853524, -2.3993454)),
+        "bevy_devcards_experiments::card::Velocity": ((-28.519655, 2.5477924)),
+      },
+    ),
+    8589934473: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 34,
+        ),
+        "bevy_devcards_experiments::card::Position": ((15.101162, 25.507317)),
+        "bevy_devcards_experiments::card::Velocity": ((34.96068, 47.132835)),
+      },
+    ),
+    8589934474: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 31,
+        ),
+        "bevy_devcards_experiments::card::Position": ((-1.0127355, 27.721708)),
+        "bevy_devcards_experiments::card::Velocity": ((-1.6433887, 43.235954)),
+      },
+    ),
+    8589934475: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 28,
+        ),
+        "bevy_devcards_experiments::card::Position": ((11.453382, -8.436044)),
+        "bevy_devcards_experiments::card::Velocity": ((12.987877, -19.022758)),
+      },
+    ),
+    8589934476: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 25,
+        ),
+        "bevy_devcards_experiments::card::Position": ((13.931914, 11.1282425)),
+        "bevy_devcards_experiments::card::Velocity": ((24.20482, 26.709366)),
+      },
+    ),
+    8589934477: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 22,
+        ),
+        "bevy_devcards_experiments::card::Position": ((9.768455, -15.041237)),
+        "bevy_devcards_experiments::card::Velocity": ((45.221252, -24.27646)),
+      },
+    ),
+    8589934478: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 19,
+        ),
+        "bevy_devcards_experiments::card::Position": ((5.009624, 4.518584)),
+        "bevy_devcards_experiments::card::Velocity": ((10.218716, 37.639854)),
+      },
+    ),
+    8589934479: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 16,
+        ),
+        "bevy_devcards_experiments::card::Position": ((-7.501356, -3.9993906)),
+        "bevy_devcards_experiments::card::Velocity": ((-44.139137, -45.238922)),
+      },
+    ),
+    8589934480: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 13,
+        ),
+        "bevy_devcards_experiments::card::Position": ((-2.8437004, 8.089586)),
+        "bevy_devcards_experiments::card::Velocity": ((22.410782, 37.660583)),
+      },
+    ),
+    8589934481: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 10,
+        ),
+        "bevy_devcards_experiments::card::Position": ((-2.016692, 1.4060869)),
+        "bevy_devcards_experiments::card::Velocity": ((-7.9226017, -29.766054)),
+      },
+    ),
+    8589934482: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 7,
+        ),
+        "bevy_devcards_experiments::card::Position": ((0.0010278225, -2.6682699)),
+        "bevy_devcards_experiments::card::Velocity": ((-22.090736, -16.517778)),
+      },
+    ),
+    8589934483: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 4,
+        ),
+        "bevy_devcards_experiments::card::Position": ((0.6271498, 4.8955765)),
+        "bevy_devcards_experiments::card::Velocity": ((2.6953468, -25.309324)),
+      },
+    ),
+    8589934484: (
+      components: {
+        "bevy_devcards_experiments::card::Age": (
+          ticks: 1,
+        ),
+        "bevy_devcards_experiments::card::Position": ((-6.83287, 5.066026)),
+        "bevy_devcards_experiments::card::Velocity": ((-14.953766, 20.446318)),
+      },
+    ),
+  },
+)

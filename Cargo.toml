@@ -1,0 +1,33 @@
+[package]
+name = "bevy-devcards-experiments"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# The plan names each experiment `src/bin/eNN_name.rs`; keep that over kebab-case.
+[lints.cargo]
+non_kebab_case_bins = "allow"
+
+# Detached from the parent `0.19/` workspace on purpose. This crate carries its
+# own Cargo.lock so that a local run and a CI run resolve byte-identically,
+# which is the whole premise of E41. Feature unification with a sibling member
+# would silently change the enabled feature set and therefore the golden.
+[workspace]
+
+[dependencies]
+# Pinned to an exact patch. These are internals questions and the answers
+# expire on version bumps; record the version in every result.
+#
+# default-features = false keeps the spike headless: no bevy_render, no winit,
+# no audio, and therefore no system libraries on a CI runner.
+#
+# Deliberately NOT enabled:
+#   multi_threaded       - single-threaded executor, so system order is the
+#                          schedule's topological order and nothing else.
+#   reflect_auto_register - the type registry is built explicitly, so the
+#                          snapshot cannot drift with a dependency's types.
+bevy = { version = "=0.19.1", default-features = false, features = [
+    "std",
+    "bevy_world_serialization",
+    "serialize",
+] }

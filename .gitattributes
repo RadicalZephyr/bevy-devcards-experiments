@@ -1,0 +1,5 @@
+# Golden snapshots are compared byte-for-byte across machines. Never let git
+# rewrite their line endings — a Windows checkout would fail E41 for a reason
+# that has nothing to do with Bevy.
+goldens/** -text
+*.ron -text
