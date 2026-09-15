@@ -65,7 +65,8 @@ impl MigrationSet {
 
     /// Declare that `T` belongs to the host, not to the card.
     pub fn with<T: Resource>(mut self) -> Self {
-        self.entries.push(Box::new(MigrateResource::<T>(PhantomData)));
+        self.entries
+            .push(Box::new(MigrateResource::<T>(PhantomData)));
         self
     }
 

@@ -214,6 +214,125 @@ turns out to be a registry question rather than a new mechanism.
 
 ---
 
+# Phase 1 — World swap
+
+In progress. E10 is staged, and stages 1-3 have landed a result that bears
+directly on Gate 1.
+
+## E10 — does a swapped world render at all?
+
+**Status: blocked, with a specific and reportable cause.** A card world swapped
+into the App's main world slot panics on the first tick, and the resources it is
+missing cannot be supplied by a third-party crate because Bevy does not export
+them.
+
+`cargo run --features render --bin e10_swap_render`
+
+### Stage 1-2 — the coupling report (this is E20, arriving early)
+
+The plan puts "find the minimum set of host resources a card world needs" in
+Phase 2. It is not a follow-on: the swap cannot be attempted without it, because
+the thing being swapped takes the renderer's own resources with it.
+
+Rather than the plan's "start with nothing, add resources until it works", this
+is a set difference between the host world and a bare card world, which produces
+the same list without the guessing:
+
+| | count |
+| --- | --- |
+| resources in a bare card world | 11 |
+| resources in the host world after the render stack | 112 |
+| in the host and not in the card | 105 |
+| …of which are `Messages<T>` event queues | 56 |
+| …of which are actual state | **49** |
+
+The 56 event queues are noise — a card world gets its own by adding the same
+plugins. The 49 that remain, by crate: `bevy_asset` 14, `bevy_render` 13,
+`bevy_input` 6, `bevy_time` 4, `bevy_a11y`/`bevy_camera`/`bevy_core_pipeline`/
+`bevy_diagnostic` 2 each, and one each from `bevy_ecs`, `bevy_image`,
+`bevy_transform`, `bevy_world_serialization`.
+
+**`AssetServer` and every `Assets<T>` are in that list.** The plan's premise that
+"render world, device, and asset storage are shared by construction because it's
+the same App" holds for the first two and not the third. Asset storage is a set
+of ordinary main-world resources, so a whole-world swap carries it off and the
+incoming card arrives with none of it.
+
+### Stage 3 — the blocker
+
+Swapping in a bare card world, with a migration set containing **every resource
+the public API can name** (`AssetServer`, `Assets<Image>`, `Assets<Mesh>`,
+`Assets<Shader>`, `RenderDevice`, `RenderQueue`, `RenderAdapter`,
+`RenderAdapterInfo`, `ClearColor`, `FrameCount`), the first `app.update()`
+panics:
+
+```
+resource does not exist: bevy_render::sync_world::PendingSyncEntity
+```
+
+Three of the main-world resources the swap has to carry are not reachable from
+outside `bevy_render`:
+
+| resource | visibility | why it matters |
+| --- | --- | --- |
+| `sync_world::PendingSyncEntity` | `pub(crate)` | the sync step's queue of added/removed entities; this is the panic above |
+| `extract_plugin::ScratchMainWorld` | private | `extract()` does `main_world.remove_resource::<ScratchMainWorld>().unwrap()` — the next panic after the first is fixed |
+| `render_asset::CachedExtractRenderAssetSystemState<A>` | private | cached extract state, one per render asset type |
+
+`ScratchMainWorld` is worth dwelling on. `bevy_render::extract_plugin::extract`
+opens with:
+
+```rust
+let scratch_world = main_world.remove_resource::<ScratchMainWorld>().unwrap();
+let inserted_world = core::mem::replace(main_world, scratch_world.0);
+```
+
+Extraction *already swaps the main world* — that is how it hands the main world
+to the render world for the duration of `ExtractSchedule`. It requires the main
+world it is given to be one it set up itself. A main world that arrived by some
+other route is an unwrap away from a panic, and the type that would let you
+prepare one is private.
+
+### What this does and does not establish
+
+It establishes that **the naive form of Phase 1 — bare card worlds swapped under
+a renderer that was built for a different world — cannot be built against Bevy
+0.19's public API.** That is a real answer and, per the plan, a reportable one:
+it is an upstream issue nobody has written, it is directly relevant to Bevy's
+own editor effort, and it is the "why cards are one at a time" README section
+rather than an apology for it.
+
+It does **not** yet establish that Gate 1 fails. One workaround is untested and
+is the obvious next step: build each card world through the *same plugin stack*
+as the host, with `RenderPlugin { render_creation: RenderCreation::Manual(..) }`
+borrowing the host's device, so each card world gets its own `ScratchMainWorld`
+and `PendingSyncEntity` from `ExtractPlugin::build` rather than needing them
+migrated. Each card App would also build a throwaway `RenderApp`, which is waste
+but not obviously a blocker.
+
+Notice where that lands: it is Phase 3's E30 mechanism (`RenderCreation::Manual`
+on a borrowed device) used as a *component of Phase 1* rather than as its
+fallback. If it works, Phase 1 and Phase 3 stop being alternatives.
+
+### Next
+
+1. E10 stage 3b — card worlds built via `RenderCreation::Manual`. Decides
+   whether Gate 1 is blocked or merely awkward.
+2. E10 stage 4 — two worlds, two images, swap per frame, verify by GPU readback
+   rather than by eye. `Readback::texture` makes the pass condition checkable,
+   which beats the plan's "draw both images to the screen".
+3. E11, E12, E13 as planned. E12 is cheaper than budgeted — see Finding 4.
+
+### Incidental finding: the diagnostic needs the `debug` feature
+
+`ComponentInfo::name()` returns `"<Enable the debug feature to see the name>"`
+unless `bevy/debug` is on. The coupling report above is only legible because the
+spike enables it. Carry forward to E22: the crate's headline diagnostic — "your
+plugin needs X, which the card world doesn't have" — cannot name X at runtime in
+a default release build.
+
+---
+
 # Findings that change the plan
 
 ## Finding 1 — `DynamicScene` does not exist in Bevy 0.19

@@ -20,12 +20,15 @@
 
 use std::collections::BTreeSet;
 
+use bevy::diagnostic::FrameCount;
 use bevy::prelude::*;
 use bevy::render::RenderPlugin;
-use bevy::render::renderer::RenderDevice;
+use bevy::render::renderer::{RenderAdapter, RenderAdapterInfo, RenderDevice, RenderQueue};
+use bevy::shader::Shader;
 use bevy::window::ExitCondition;
 
 use bevy_devcards_experiments::card::{CardConfig, FIXED_STEP, card_sub_app, shared_registry};
+use bevy_devcards_experiments::swap::{CardWorlds, MigrationSet};
 use bevy_devcards_experiments::{BEVY_VERSION, PROFILE};
 
 fn main() {
@@ -67,7 +70,10 @@ fn main() {
     }
 
     let host_resources = resource_names(host.world());
-    println!("  main-world resources after the render stack: {}", host_resources.len());
+    println!(
+        "  main-world resources after the render stack: {}",
+        host_resources.len()
+    );
     println!();
 
     // ---------------------------------------------------------------------
@@ -78,26 +84,154 @@ fn main() {
     let card_resources = resource_names(card.world());
 
     let missing: Vec<&String> = host_resources.difference(&card_resources).collect();
+    // `Messages<T>` are double-buffered event queues. A card world gets its own
+    // simply by adding the same plugins, so they inflate the number without
+    // telling you anything. Split them out: the shape matters more than the size.
+    let (queues, state): (Vec<&&String>, Vec<&&String>) =
+        missing.iter().partition(|n| n.contains("Messages<"));
+
     println!("stage 2 — coupling report");
     println!(
-        "  a bare card world has {} resources; the host has {}",
+        "  bare card world: {} resources.  host world: {} resources.",
         card_resources.len(),
         host_resources.len()
     );
     println!(
-        "  {} resources exist in the host world and not in a card world:",
-        missing.len()
+        "  {} exist in the host and not in a card: {} event queues, {} real state.",
+        missing.len(),
+        queues.len(),
+        state.len()
     );
-    for name in &missing {
-        println!("    {name}");
+    println!();
+    println!("  The {} that are actual state, by crate:", state.len());
+    let mut by_crate: std::collections::BTreeMap<&str, Vec<&str>> = Default::default();
+    for name in &state {
+        let krate = name.split("::").next().unwrap_or("?");
+        by_crate.entry(krate).or_default().push(name.as_str());
+    }
+    for (krate, names) in &by_crate {
+        println!("    {krate} ({})", names.len());
+        for n in names {
+            println!("      {}", short(n));
+        }
     }
     println!();
-    println!("  This list is the prototype coupling report. Every entry is either");
-    println!("  something the card world must be given, or something that must");
-    println!("  travel with the App across a swap.");
+    println!("  The headline: `AssetServer` and every `Assets<T>` are in this list.");
+    println!("  The plan assumes asset storage is shared by construction because it");
+    println!("  is the same App. It is not — asset storage is a set of ordinary main");
+    println!("  world resources, and a whole-world swap takes them with it.");
     println!();
 
-    println!("E10 stages 1-2 complete. Stages 3-4 pending — see RESULTS.md.");
+    // ---------------------------------------------------------------------
+    // Stage 3 — does a swapped-in card world survive one frame?
+    // ---------------------------------------------------------------------
+    // Migrate everything the public API lets us name. If the swap still fails
+    // with a complete public migration set, the failure is structural rather
+    // than a matter of finding one more resource.
+    let migration = public_migration_set();
+    println!("stage 3 — swapping a card world in under the renderer");
+    println!(
+        "  migration set: {} resources, every one of them publicly nameable",
+        migration.len()
+    );
+
+    let mut card_world = card;
+    let card_world = core::mem::take(card_world.world_mut());
+    let mut cards = CardWorlds::new(vec![card_world], migration);
+    let absent = cards.swap_to(host.world_mut(), 0);
+    if absent.is_empty() {
+        println!("  swap done: every declared resource was found and moved");
+    } else {
+        println!(
+            "  swap done, but {} declared resources were absent:",
+            absent.len()
+        );
+        for name in &absent {
+            println!("    {}", short(name));
+        }
+    }
+
+    // The swapped-in world is missing whatever the migration set could not name.
+    let after = resource_names(host.world());
+    let still_missing: Vec<&String> = host_resources
+        .difference(&after)
+        .filter(|n| !n.contains("Messages<"))
+        .collect();
+    println!(
+        "  after the swap the App's world is missing {} of the host's non-queue resources",
+        still_missing.len()
+    );
+
+    println!();
+    println!("  ticking the App once...");
+    let panic_message = capture_panic(|| host.update());
+    match panic_message {
+        None => {
+            println!("  SURVIVED. A bare card world ticks under the renderer.");
+            println!("  -> proceed to stage 4 (two worlds, two images).");
+        }
+        Some(message) => {
+            println!("  PANICKED: {message}");
+            println!();
+            println!("  This is the Gate 1 finding. See RESULTS.md — the blocker is that");
+            println!("  three main-world resources the swap must carry are not public:");
+            println!("    bevy_render::extract_plugin::ScratchMainWorld        (private)");
+            println!("    bevy_render::sync_world::PendingSyncEntity           (pub(crate))");
+            println!(
+                "    bevy_render::render_asset::CachedExtractRenderAssetSystemState<A> (private)"
+            );
+        }
+    }
+}
+
+/// Everything in the coupling report that a third-party crate can actually name.
+fn public_migration_set() -> MigrationSet {
+    MigrationSet::new()
+        .with::<AssetServer>()
+        .with::<Assets<Image>>()
+        .with::<Assets<Mesh>>()
+        .with::<Assets<Shader>>()
+        .with::<RenderDevice>()
+        .with::<RenderQueue>()
+        .with::<RenderAdapter>()
+        .with::<RenderAdapterInfo>()
+        .with::<ClearColor>()
+        .with::<FrameCount>()
+}
+
+/// Trim the crate prefix off a type path so the report is readable.
+fn short(name: &str) -> String {
+    name.replace("bevy_ecs::message::messages::", "")
+        .replace("bevy_asset::assets::", "")
+        .replace("bevy_render::renderer::render_device::", "")
+        .replace("bevy_render::renderer::", "")
+        .replace("bevy_render::", "")
+        .replace("bevy_asset::", "")
+}
+
+fn capture_panic(f: impl FnOnce()) -> Option<String> {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    use std::sync::{Arc, Mutex};
+
+    let captured: Arc<Mutex<Option<String>>> = Arc::default();
+    let sink = Arc::clone(&captured);
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        *sink.lock().unwrap() = Some(info.to_string());
+    }));
+    let result = catch_unwind(AssertUnwindSafe(f));
+    std::panic::set_hook(previous);
+
+    match result {
+        Ok(()) => None,
+        Err(_) => Some(
+            captured
+                .lock()
+                .unwrap()
+                .take()
+                .unwrap_or_else(|| "panicked, message not captured".to_string()),
+        ),
+    }
 }
 
 fn resource_names(world: &World) -> BTreeSet<String> {

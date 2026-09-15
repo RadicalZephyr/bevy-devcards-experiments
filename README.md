@@ -25,6 +25,13 @@ cargo run --bin e40_subapp_worlds
 | `e40_subapp_worlds` | 4 | Do card worlds work as headless sub-apps with their own fixed-step clocks? |
 | `e41_snapshot_determinism` | 4 | Are reflection snapshots byte-identical across runs, profiles, and machines? |
 | `e42_snapshot_churn` | 4 | Is a whole-world text golden reviewable in a pull request? |
+| `e10_swap_render` | 1 | Does a card world swapped into the App's main world slot render? |
+
+Phase 1 needs the renderer, so it sits behind a feature:
+
+```bash
+cargo run --features render --bin e10_swap_render
+```
 
 E41 compares against a committed golden. To regenerate it after an intentional
 change to the card simulation:
