@@ -22,9 +22,14 @@ use std::collections::BTreeSet;
 
 use bevy::diagnostic::FrameCount;
 use bevy::prelude::*;
+use bevy::render::RenderApp;
 use bevy::render::RenderPlugin;
-use bevy::render::renderer::{RenderAdapter, RenderAdapterInfo, RenderDevice, RenderQueue};
+use bevy::render::renderer::{
+    RenderAdapter, RenderAdapterInfo, RenderDevice, RenderInstance, RenderQueue,
+};
+use bevy::render::settings::RenderCreation;
 use bevy::shader::Shader;
+use bevy::time::TimeReceiver;
 use bevy::window::ExitCondition;
 
 use bevy_devcards_experiments::card::{CardConfig, FIXED_STEP, card_sub_app, shared_registry};
@@ -173,8 +178,8 @@ fn main() {
         Some(message) => {
             println!("  PANICKED: {message}");
             println!();
-            println!("  This is the Gate 1 finding. See RESULTS.md — the blocker is that");
-            println!("  three main-world resources the swap must carry are not public:");
+            println!("  The blocker: three main-world resources the swap must carry are");
+            println!("  not reachable from outside bevy_render:");
             println!("    bevy_render::extract_plugin::ScratchMainWorld        (private)");
             println!("    bevy_render::sync_world::PendingSyncEntity           (pub(crate))");
             println!(
@@ -182,6 +187,181 @@ fn main() {
             );
         }
     }
+    println!();
+
+    // ---------------------------------------------------------------------
+    // Stage 3b — build the card world through the same plugin stack
+    // ---------------------------------------------------------------------
+    // If a card world cannot be *given* the private resources, it can build
+    // them itself: run the same `RenderPlugin` over it, with
+    // `RenderCreation::Manual` borrowing the host's device so no second GPU
+    // context is created. `ExtractPlugin::build` then installs
+    // `ScratchMainWorld` and `PendingSyncEntity` into the card world directly.
+    //
+    // Note where this mechanism comes from: it is Phase 3's E30
+    // (`RenderCreation::Manual` on a borrowed device), used as a component of
+    // Phase 1 rather than as its fallback.
+    println!("stage 3b — card world built through the same plugin stack");
+    let mut host2 = build_host();
+    let Some(borrowed) = borrow_render_resources(&host2) else {
+        println!("  no render resources to borrow; stopping.");
+        return;
+    };
+
+    let mut built = Vec::new();
+    for i in 0..CARDS_3B {
+        match capture_panic_value(|| card_world_with_render_stack(&borrowed)) {
+            Ok(world) => built.push(world),
+            Err(message) => {
+                println!("  PANICKED building card {i}: {message}");
+                return;
+            }
+        }
+    }
+    println!("  {CARDS_3B} card worlds built on the host's borrowed device");
+
+    let names = resource_names(&built[0]);
+    for probe in [
+        "bevy_render::sync_world::PendingSyncEntity",
+        "bevy_render::extract_plugin::ScratchMainWorld",
+    ] {
+        println!(
+            "  card world has {}: {}",
+            short(probe),
+            names.contains(probe)
+        );
+    }
+
+    // The card brought its own copies of the private resources, so the
+    // migration set only has to carry things that must be *shared* with the
+    // host's render world rather than duplicated. `TimeReceiver` is one: the
+    // host's render app holds the matching `TimeSender`, and a card with its
+    // own channel leaves the host's sender writing into a queue nobody drains.
+    let migration2 = MigrationSet::new().with::<TimeReceiver>();
+    let mut cards2 = CardWorlds::new(built, migration2);
+    println!(
+        "  migration set: {} resource(s) — {}",
+        cards2.migration().len(),
+        cards2.migration().names().join(", ")
+    );
+
+    println!("  round-robin swapping for {FRAMES_3B} frames...");
+    let result = capture_panic(|| {
+        for _ in 0..FRAMES_3B {
+            cards2.swap_next(host2.world_mut());
+            host2.update();
+        }
+    });
+    match result {
+        None => {
+            println!(
+                "  SURVIVED {} swaps across {CARDS_3B} worlds.",
+                cards2.swaps()
+            );
+            println!("  Gate 1 is NOT blocked by resource visibility. The naive swap is,");
+            println!("  but a card world built through the same plugin stack is not.");
+            println!("  -> next: stage 4, verify each card's image actually updates.");
+        }
+        Some(message) => {
+            println!("  PANICKED after {} swaps: {message}", cards2.swaps());
+        }
+    }
+}
+
+const CARDS_3B: usize = 3;
+const FRAMES_3B: usize = 240;
+
+/// The host App: everything, including the renderer, and no window.
+fn build_host() -> App {
+    let mut app = App::new();
+    app.add_plugins(
+        DefaultPlugins
+            .set(WindowPlugin {
+                primary_window: None,
+                exit_condition: ExitCondition::DontExit,
+                ..default()
+            })
+            .set(RenderPlugin {
+                synchronous_pipeline_compilation: true,
+                ..default()
+            }),
+    );
+    app.finish();
+    app.cleanup();
+    app
+}
+
+/// The five handles `RenderCreation::manual` needs, all publicly nameable.
+struct BorrowedRenderResources {
+    device: RenderDevice,
+    queue: RenderQueue,
+    adapter_info: RenderAdapterInfo,
+    adapter: RenderAdapter,
+    instance: RenderInstance,
+}
+
+/// Note the asymmetry, which the coupling report already showed: `RenderDevice`,
+/// `RenderQueue`, `RenderAdapter` and `RenderAdapterInfo` are inserted into both
+/// worlds, but `RenderInstance` goes only into the render world. Borrowing the
+/// full set needs both.
+fn borrow_render_resources(app: &App) -> Option<BorrowedRenderResources> {
+    let world = app.world();
+    let render_world = app.get_sub_app(RenderApp)?.world();
+    Some(BorrowedRenderResources {
+        device: world.get_resource::<RenderDevice>()?.clone(),
+        queue: world.get_resource::<RenderQueue>()?.clone(),
+        adapter_info: world.get_resource::<RenderAdapterInfo>()?.clone(),
+        adapter: world.get_resource::<RenderAdapter>()?.clone(),
+        instance: render_world.get_resource::<RenderInstance>()?.clone(),
+    })
+}
+
+fn card_world_with_render_stack(res: &BorrowedRenderResources) -> World {
+    let mut app = App::new();
+    app.add_plugins(
+        DefaultPlugins
+            .set(WindowPlugin {
+                primary_window: None,
+                exit_condition: ExitCondition::DontExit,
+                ..default()
+            })
+            .set(RenderPlugin {
+                render_creation: RenderCreation::manual(
+                    res.device.clone(),
+                    res.queue.clone(),
+                    res.adapter_info.clone(),
+                    res.adapter.clone(),
+                    res.instance.clone(),
+                ),
+                synchronous_pipeline_compilation: true,
+                ..default()
+            }),
+    );
+    app.finish();
+    app.cleanup();
+    core::mem::take(app.world_mut())
+}
+
+fn capture_panic_value<T>(f: impl FnOnce() -> T) -> Result<T, String> {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    use std::sync::{Arc, Mutex};
+
+    let captured: Arc<Mutex<Option<String>>> = Arc::default();
+    let sink = Arc::clone(&captured);
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        *sink.lock().unwrap() = Some(info.to_string());
+    }));
+    let result = catch_unwind(AssertUnwindSafe(f));
+    std::panic::set_hook(previous);
+
+    result.map_err(|_| {
+        captured
+            .lock()
+            .unwrap()
+            .take()
+            .unwrap_or_else(|| "panicked, message not captured".to_string())
+    })
 }
 
 /// Everything in the coupling report that a third-party crate can actually name.

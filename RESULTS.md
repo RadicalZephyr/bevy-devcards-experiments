@@ -216,23 +216,22 @@ turns out to be a registry question rather than a new mechanism.
 
 # Phase 1 — World swap
 
-In progress. E10 is staged, and stages 1-3 have landed a result that bears
-directly on Gate 1.
+E10 is staged, and stages 1-3b have reached a Gate 1 answer: **the world swap
+fails, for one precise and reportable reason.**
+
+`cargo run --features render --bin e10_swap_render`
 
 ## E10 — does a swapped world render at all?
 
-**Status: blocked, with a specific and reportable cause.** A card world swapped
-into the App's main world slot panics on the first tick, and the resources it is
-missing cannot be supplied by a third-party crate because Bevy does not export
-them.
-
-`cargo run --features render --bin e10_swap_render`
+It does not, and the cause is three layers deep. Each layer has a different
+answer, which is why the first two are worth recording rather than skipping to
+the verdict.
 
 ### Stage 1-2 — the coupling report (this is E20, arriving early)
 
 The plan puts "find the minimum set of host resources a card world needs" in
 Phase 2. It is not a follow-on: the swap cannot be attempted without it, because
-the thing being swapped takes the renderer's own resources with it.
+the thing being swapped carries the renderer's own resources away with it.
 
 Rather than the plan's "start with nothing, add resources until it works", this
 is a set difference between the host world and a bare card world, which produces
@@ -258,78 +257,124 @@ the same App" holds for the first two and not the third. Asset storage is a set
 of ordinary main-world resources, so a whole-world swap carries it off and the
 incoming card arrives with none of it.
 
-### Stage 3 — the blocker
+### Stage 3 — the naive swap is blocked by visibility
 
 Swapping in a bare card world, with a migration set containing **every resource
-the public API can name** (`AssetServer`, `Assets<Image>`, `Assets<Mesh>`,
-`Assets<Shader>`, `RenderDevice`, `RenderQueue`, `RenderAdapter`,
-`RenderAdapterInfo`, `ClearColor`, `FrameCount`), the first `app.update()`
-panics:
+the public API can name**, panics on the first tick:
 
 ```
 resource does not exist: bevy_render::sync_world::PendingSyncEntity
 ```
 
-Three of the main-world resources the swap has to carry are not reachable from
+Three of the main-world resources the swap must carry are not reachable from
 outside `bevy_render`:
 
-| resource | visibility | why it matters |
-| --- | --- | --- |
-| `sync_world::PendingSyncEntity` | `pub(crate)` | the sync step's queue of added/removed entities; this is the panic above |
-| `extract_plugin::ScratchMainWorld` | private | `extract()` does `main_world.remove_resource::<ScratchMainWorld>().unwrap()` — the next panic after the first is fixed |
-| `render_asset::CachedExtractRenderAssetSystemState<A>` | private | cached extract state, one per render asset type |
+| resource | visibility |
+| --- | --- |
+| `sync_world::PendingSyncEntity` | `pub(crate)` |
+| `extract_plugin::ScratchMainWorld` | private |
+| `render_asset::CachedExtractRenderAssetSystemState<A>` | private |
 
-`ScratchMainWorld` is worth dwelling on. `bevy_render::extract_plugin::extract`
-opens with:
+So the *naive* form of Phase 1 — bare card worlds handed to a renderer built for
+a different world — cannot be built against the public API. That turns out not
+to be the real obstacle.
 
-```rust
-let scratch_world = main_world.remove_resource::<ScratchMainWorld>().unwrap();
-let inserted_world = core::mem::replace(main_world, scratch_world.0);
+### Stage 3b — building the card world through the same plugin stack
+
+If a card world cannot be *given* the private resources, it can build them
+itself: run the same `RenderPlugin` over it with
+`RenderCreation::Manual` borrowing the host's device, queue, adapter and
+instance, so no second GPU context is created. `ExtractPlugin::build` then
+installs `ScratchMainWorld` and `PendingSyncEntity` into the card world directly.
+
+This works, and it is worth noticing where the mechanism comes from: it is Phase
+3's E30 (`RenderCreation::Manual` on a borrowed device) used as a *component of
+Phase 1*, not as its fallback. Answering E30 in the affirmative is now a
+prerequisite for Phase 1 rather than an alternative to it.
+
+Two further things fall out:
+
+- `RenderInstance` is inserted **only into the render world**, while
+  `RenderDevice`, `RenderQueue`, `RenderAdapter` and `RenderAdapterInfo` go into
+  both. Borrowing the full set means reaching into `RenderApp` as well.
+- The migration set collapses to **one resource**: `bevy_time::TimeReceiver`.
+  The host's render app holds the matching `TimeSender`; a card with its own
+  channel leaves the host's sender writing into a queue nobody drains, and
+  `bevy_render::send_time` panics with "The TimeSender channel should always be
+  empty during render". Everything else the card builds for itself.
+
+One card, swapped in once, then ticks fine.
+
+### The blocker: `Extract` caches a `SystemState` bound to one `WorldId`
+
+Round-robin across three card worlds panics on the **second** swap, in every
+render-world system that uses `Extract`:
+
+```
+Encountered a panic in system `bevy_core_pipeline::core_3d::extract_camera_prepass_phase`!
+Encountered a mismatched World. This SystemState was created from WorldId(71),
+but a method was called using WorldId(106).
 ```
 
-Extraction *already swaps the main world* — that is how it hands the main world
-to the render world for the duration of `ExtractSchedule`. It requires the main
-world it is given to be one it set up itself. A main world that arrived by some
-other route is an unwrap away from a panic, and the type that would let you
-prepare one is private.
+The cause is `bevy_render::extract_param`:
 
-### What this does and does not establish
+```rust
+fn init_state(world: &mut World) -> Self::State {
+    let mut main_world = world.resource_mut::<MainWorld>();
+    ExtractState {
+        state: SystemState::new(&mut main_world),
+        main_world_state: Res::<MainWorld>::init_state(world),
+    }
+}
+```
 
-It establishes that **the naive form of Phase 1 — bare card worlds swapped under
-a renderer that was built for a different world — cannot be built against Bevy
-0.19's public API.** That is a real answer and, per the plan, a reportable one:
-it is an upstream issue nobody has written, it is directly relevant to Bevy's
-own editor effort, and it is the "why cards are one at a time" README section
-rather than an apology for it.
+`Extract<P>` builds a `SystemState<P>` against whichever main world happens to be
+installed the first time the extract system initialises, and `SystemState`
+validates `WorldId` on every subsequent use. The first swap is survivable because
+the states have not been initialised yet — they bind to card 0. The second swap
+presents card 1, a different `World`, and every extract system rejects it.
 
-It does **not** yet establish that Gate 1 fails. One workaround is untested and
-is the obvious next step: build each card world through the *same plugin stack*
-as the host, with `RenderPlugin { render_creation: RenderCreation::Manual(..) }`
-borrowing the host's device, so each card world gets its own `ScratchMainWorld`
-and `PendingSyncEntity` from `ExtractPlugin::build` rather than needing them
-migrated. Each card App would also build a throwaway `RenderApp`, which is waste
-but not obviously a blocker.
+The sequence is exact: swap 1 (host → card 0) ticks; swap 2 (card 0 → card 1)
+panics.
 
-Notice where that lands: it is Phase 3's E30 mechanism (`RenderCreation::Manual`
-on a borrowed device) used as a *component of Phase 1* rather than as its
-fallback. If it works, Phase 1 and Phase 3 stop being alternatives.
+## Gate 1 — fail
 
-### Next
+The gate asks for two worlds rendering, a bounded render-world entity count, and
+entity mapping that is clean or fixable by offsetting. The first condition fails
+before the other two can be measured, so E11 and E12 are moot **for this
+approach**: the render world never sees a second main world at all.
 
-1. E10 stage 3b — card worlds built via `RenderCreation::Manual`. Decides
-   whether Gate 1 is blocked or merely awkward.
-2. E10 stage 4 — two worlds, two images, swap per frame, verify by GPU readback
-   rather than by eye. `Readback::texture` makes the pass condition checkable,
-   which beats the plan's "draw both images to the screen".
-3. E11, E12, E13 as planned. E12 is cheaper than budgeted — see Finding 4.
+Per the plan, fail → Phase 3.
 
-### Incidental finding: the diagnostic needs the `debug` feature
+### The negative result, stated for upstream
 
-`ComponentInfo::name()` returns `"<Enable the debug feature to see the name>"`
-unless `bevy/debug` is on. The coupling report above is only legible because the
-spike enables it. Carry forward to E22: the crate's headline diagnostic — "your
-plugin needs X, which the card world doesn't have" — cannot name X at runtime in
-a default release build.
+This is the artifact the plan says is worth writing carefully, so here it is in
+one paragraph.
+
+> In Bevy 0.19, the render world cannot be driven by more than one main world.
+> The obstruction is not the retained render world's entity mapping, which is
+> where it was expected — it is `bevy_render::extract_param::Extract`, which
+> caches a `SystemState` built against the main world present at system
+> initialisation and validates `WorldId` on every use. Any main world other than
+> that one panics at the first extract. Three supporting main-world resources
+> (`PendingSyncEntity`, `ScratchMainWorld`,
+> `CachedExtractRenderAssetSystemState<A>`) are also not public, which blocks the
+> simpler workaround of migrating them; that is surmountable by building each
+> candidate main world through the same `RenderPlugin` with
+> `RenderCreation::Manual`, but the `WorldId` binding is not.
+
+Directly relevant to Bevy's own editor effort, and it is the README section
+explaining why cards are one at a time rather than an apology for it.
+
+### What is still worth running
+
+- **E12's entity-id collision is already confirmed** by E40 at 100% overlap, so
+  it needs no separate experiment. See Finding 4.
+- **E13 (dormancy)** is still worth running and is independent of rendering: it
+  is about change ticks, `Time`, and events in a world that has not been ticked
+  for a long time. Phase 4 already establishes the `Time` half.
+- **E11** is only meaningful once something gets two worlds in front of the
+  render world, so it moves behind Phase 3's E30/E31.
 
 ---
 
@@ -362,7 +407,20 @@ This matters for the product pitch, not just for this repo: card *simulation*
 and snapshot regression can ship to users whose CI is a bare container, whatever
 Phase 1 decides about rendering.
 
-## Finding 3 — sub-apps are the wrong mechanism for ordered round-robin
+## Finding 3 — Phase 1 and Phase 3 are not alternatives
+
+The plan treats Phase 3 (shared device, multiple Apps) as the fallback if Phase 1
+fails its gate. E10 stage 3b shows they overlap: the only way to give a card
+world the private resources it needs is to build it through the same
+`RenderPlugin` with `RenderCreation::Manual` on the host's borrowed device —
+which is E30's mechanism. Phase 1 *contains* Phase 3's first question rather than
+being an alternative to it.
+
+Practical consequence: E30 is already answered in the affirmative. A second (and
+third) App boots on a borrowed device, in-process, with no second GPU context.
+Phase 3 starts from E31.
+
+## Finding 4 — sub-apps are the wrong mechanism for ordered round-robin
 
 Phase 1's design ticks cards round-robin so each gets `fps/N` and the focused
 card gets every frame. Sub-apps cannot express that: their tick order is
@@ -373,7 +431,7 @@ scheduling policy has to live in an ordered collection the host drives itself.
 That is a cheap change, and it is better to know before Phase 1 builds on
 `insert_sub_app`.
 
-## Finding 4 — the entity-id collision is already confirmed
+## Finding 5 — the entity-id collision is already confirmed
 
 E12 does not need to establish that two worlds collide; E40 already did, at 100%
 overlap. E12's real job is narrower than the plan assumes: does the render world
@@ -381,13 +439,52 @@ actually *mix them up*, and does offsetting each allocator fix it.
 
 ---
 
-# Carried forward into Phase 1
+# Where this leaves the spike
 
-- Offsetting entity allocators (E12) is now a known requirement rather than a
-  hypothesis. Budget for it.
-- Per-card `Time<Virtual>` advanced by an explicit step, never from real time,
-  already gives the dormancy property E13 asks about: a card skipped for N host
-  frames resumes with the delta it always had. E13 only needs to check change
-  ticks and events.
-- `DynamicWorld` snapshots give Phase 1 a cheap oracle: "did swapping worlds
-  change the simulation?" is answerable byte-for-byte without rendering.
+Phase 4 passes outright. Phase 1 fails its gate with a precise cause. Nothing
+here has touched Phase 0's baselines yet, and Gate 3 is still open.
+
+**Next, in order:**
+
+1. **Phase 0 (E00, E01).** Still unrun, and Gate 3 depends on it. E40 supplies
+   half of E00 already: ~2346 small card worlds tickable in a 16.67 ms budget in
+   release. E01 — how many render-to-texture cameras fit in the same budget — is
+   the missing half, and the gap between the two numbers is the whole UI
+   argument.
+2. **Phase 3, starting at E31.** E30 is answered: a second App boots on a
+   borrowed device (E10 stage 3b). E31 — can the host's render world be handed a
+   `GpuImage` pointing at a card app's texture — is the open question, and the
+   one that decides whether the grid exists.
+3. **E32, the duplication tax.** Each App gets its own `AssetServer` and
+   `Assets<T>`; the coupling report shows 14 asset resources per world. If four
+   apps means four copies of a 20 MB mesh, the grid has a ceiling that has
+   nothing to do with frame time.
+4. **E13 (dormancy).** Independent of rendering and still worth running. Phase 4
+   settled the `Time` half: a card advanced by an explicit fixed step, never from
+   real time, resumes after any gap with the delta it always had. What remains is
+   change ticks and events.
+5. **Phase 5 (E50).** More relevant now than when it was written. If Phase 3 also
+   fails, "one world, N scopes" is not merely the yardstick, it is the design.
+
+**Not worth running as specified:**
+
+- **E11.** Only meaningful once something gets two main worlds in front of one
+  render world. Moves behind E31.
+- **E12.** Its first half is already answered — E40 confirmed 100% entity-id
+  overlap across worlds. Its second half (does the render world mix them up,
+  does offsetting fix it) is only reachable after E31.
+
+**Open questions the plan raised, with what is now known:**
+
+- *Does the migration set want to be declared or inferred?* The set difference in
+  E10 stage 2 infers it mechanically, and the answer came out at 49 real
+  resources. But stage 3b showed the useful set is not that list — it is the much
+  smaller set of things that must be **shared** rather than duplicated, which was
+  one resource. "Declared" now looks clearly right, because the interesting
+  question is sharing, not presence.
+- *Do lab cards and regression cards want the same ceremony?* E42 sharpened this:
+  a component-level change costs 0.26% churn and an entity-count change costs
+  25%. A regression card needs a golden keyed by something stable; a lab card
+  needs no golden at all. Different artifacts, so probably different ceremony.
+- *What is the right UI for "many simulating, few visible"?* Still open, and
+  still blocked on E01.
