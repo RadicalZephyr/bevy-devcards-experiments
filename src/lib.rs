@@ -8,6 +8,11 @@ pub mod card;
 pub mod diff;
 pub mod snapshot;
 
+/// Phase 1's world-swap mechanism. Behind the `render` feature because the only
+/// reason to swap worlds is to get them on screen.
+#[cfg(feature = "render")]
+pub mod swap;
+
 /// The exact Bevy patch these results are valid for. Printed by every
 /// experiment, because the answers expire on version bumps.
 pub const BEVY_VERSION: &str = "0.19.1";

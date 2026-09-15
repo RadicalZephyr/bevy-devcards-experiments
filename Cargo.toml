@@ -31,3 +31,29 @@ bevy = { version = "=0.19.1", default-features = false, features = [
     "bevy_world_serialization",
     "serialize",
 ] }
+
+[features]
+default = []
+
+# Phase 1 needs the renderer. It lives behind a feature so the Phase 4
+# experiments — and the CI that runs them — stay free of wgpu, winit, and any
+# system library. Nothing in Phase 4 should get slower because Phase 1 exists.
+render = [
+    # Without `debug`, `ComponentInfo::name()` returns a placeholder for every
+    # type, so the coupling report E10 produces would be 112 identical lines.
+    # Worth noting for E22: the diagnostic the crate wants to give users is not
+    # available at runtime unless this feature is on.
+    "bevy/debug",
+    "bevy/bevy_render",
+    "bevy/bevy_core_pipeline",
+    "bevy/bevy_sprite",
+    "bevy/bevy_window",
+    "bevy/png",
+]
+
+# Phase 1 binaries. Declared explicitly so they are skipped entirely unless
+# `--features render` is passed; the Phase 4 bins stay auto-discovered.
+[[bin]]
+name = "e10_swap_render"
+path = "src/bin/e10_swap_render.rs"
+required-features = ["render"]

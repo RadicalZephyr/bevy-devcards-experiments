@@ -86,6 +86,10 @@ jobs:
       # actually produced, ready to diff against the committed golden.
       - name: Upload snapshots
         if: always()
+        # A hiccup in the artifact service must not turn an experimental result
+        # red. The verdict is what the experiments printed; this upload is a
+        # convenience for diffing an E41 failure.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: snapshots-${{ matrix.os }}-${{ matrix.profile }}

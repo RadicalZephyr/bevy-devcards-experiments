@@ -117,7 +117,27 @@ to RON via `DynamicWorld`.
 | matches committed golden | yes | yes |
 
 Golden: `goldens/e41_card.scn.ron`, 12180 bytes, 379 lines,
-`fnv1a64=d92f1bb50c6814be` — **the same fingerprint in debug and release.**
+`fnv1a64=d92f1bb50c6814be`.
+
+**Every machine and profile produced that same fingerprint**, which is a stronger
+result than the plan asked for — it wanted "your machine vs a CI runner", and
+this is four environments and two toolchains:
+
+| environment | toolchain | fingerprint |
+| --- | --- | --- |
+| local Linux x86_64, debug | nightly 1.100.0 | `d92f1bb50c6814be` |
+| local Linux x86_64, release | nightly 1.100.0 | `d92f1bb50c6814be` |
+| CI ubuntu-latest, debug | stable | `d92f1bb50c6814be` |
+| CI ubuntu-latest, release | stable | `d92f1bb50c6814be` |
+| CI macos-latest, release | stable | `d92f1bb50c6814be` |
+| CI windows-latest, release | stable | `d92f1bb50c6814be` |
+
+Reflection snapshots are the default golden artifact. Pixel diffing stays
+opt-in, and the cross-driver screenshot tarpit stays off every user's CI.
+
+One operational caveat, cheap to get wrong: the golden must be marked `-text` in
+`.gitattributes`. Without it a Windows checkout rewrites LF to CRLF and E41
+fails for a reason that has nothing to do with Bevy.
 
 The "different seed" row is there to stop the other three passing for the wrong
 reason: a snapshot that was accidentally constant would satisfy every identity
