@@ -1,6 +1,7 @@
 # Handoff — bevy-devcards feasibility spike
 
-Written 2026-09-22. Next session: continuing the spike on a **different computer**.
+Written 2026-09-22, skills section amended 2026-09-24. Next session: continuing
+the spike on a **different computer**.
 
 ## State in one paragraph
 
@@ -150,19 +151,39 @@ memory, read them there.
 Call these with the Skill tool as the work demands. The spike itself used none —
 it was straight engineering — so these are for the phase that follows.
 
-- **`domain-modeling`** — the highest-value one next. The spike produced an
-  architecture decision with measured evidence behind it, and it currently exists
-  only as prose in `RESULTS.md`. Recording it as an ADR, and settling the
-  vocabulary (card, host, lab card vs regression card), is exactly this skill's
-  job and should happen before the crate's API solidifies.
-- **`grilling`** — before committing to the crate design. The spike's conclusion
-  reverses the plan's expected architecture, and the two "must own" constraints
-  are load-bearing. Worth stress-testing rather than accepting because the
-  measurements were clean.
-- **`tdd`** — if building the crate. Note that `e41`'s snapshot machinery already
-  gives a byte-exact oracle for "did this change card behaviour", which is an
-  unusually good foundation to test against.
-- **`anthropic-skills:writing-for-agents`** — only if adding a `CLAUDE.md` or
+**Check availability first.** Skills come from two places and only one of them
+follows you to a new machine:
+
+- *claude.ai account skills* travel automatically. Verified 2026-09-24:
+  `park`, `domain-modeling`, `grilling`, `handoff`, `writing-for-agents`,
+  `wait-what`, `i-have-adhd`, `docs`, `doc-coauthoring`, `skill-creator`,
+  `learn`, `import-memory`, and the file-format ones.
+- *local skills* in `~/.claude/skills/` do **not** travel unless that directory
+  is synced. On the old machine that set was: `domain-modeling`, `grilling`,
+  `handoff`, `i-have-adhd`, `research`, `sodium-frp`, `sodium-frp-workspace`,
+  `tdd`, `teach`, `wait-what`, `wayfinder`. Note the overlap — the first five
+  exist in both places and are safe either way.
+
+Ranked for the work ahead:
+
+- **`park`** — account-level. Worth running on the **old** machine before
+  abandoning it, if that has not happened already. It writes a `STATUS.md`,
+  commits and pushes, which is the belt to this document's braces.
+- **`domain-modeling`** — account-level, and the highest-value one for the next
+  phase. The spike produced an architecture decision with measured evidence
+  behind it, and it currently exists only as prose in `RESULTS.md`. Recording it
+  as an ADR, and settling the vocabulary (card, host, lab card vs regression
+  card), should happen before the crate's API solidifies.
+- **`grilling`** — account-level. Before committing to the crate design. The
+  spike's conclusion reverses the plan's expected architecture, and the two "must
+  own" constraints are load-bearing. Worth stress-testing rather than accepting
+  because the measurements were clean.
+- **`tdd`** — **local only; will be missing on a fresh machine.** If building the
+  crate test-first, either sync `~/.claude/skills/` or proceed without it. Worth
+  knowing that `e41`'s snapshot machinery already gives a byte-exact oracle for
+  "did this change card behaviour", which is an unusually good thing to test
+  against with or without the skill.
+- **`writing-for-agents`** — account-level. Only if adding a `CLAUDE.md` or
   `AGENTS.md` to the crate repo.
 
 ## Redaction note
